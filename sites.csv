@@ -1,0 +1,3 @@
+site_tag,product,latitude,longitude,email,start_date,end_date,kmAboveBelow,kmLeftRight
+place_2,MYD09A1,39.262,-96.753,foo@bar.org,2005-01-01,2020-12-31,32,32
+anomplc,MYD09A1,38.0,-95.0,foo@bar.org,2005-01-01,2020-12-31,32,32
