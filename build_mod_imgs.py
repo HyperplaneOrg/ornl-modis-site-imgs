@@ -11,58 +11,62 @@ import numpy
 from PIL import Image
 import pandas as pd
 import requests
+from skimage import exposure
+
+# The site file, of the format: site_tag,latitude,longitude,start_date,end_date,kmAboveBelow,kmLeftRight
+CSV = "sites.csv"
 
 URL = "https://modis.ornl.gov/rst/api/v1/"
 ORDURL = "https://modis.ornl.gov/subsetdata"
 HEADER = {'Accept': 'application/json'}
 
-# The site file, of the format: site_tag,latitude,longitude,start_date,end_date,kmAboveBelow,kmLeftRight
-CSV = "sites-subset.csv"
-
 BANDS = ['sur_refl_b01', 'sur_refl_b04', 'sur_refl_b03', 'sur_refl_qc_500m']
 PROD = ['MYD09A1', 'MOD09A1']
-# MOD Land QC
-MDLND_QC = 3 # 11
 # MXD09A1 QC, this runs parallel to BANDS, defs at https://lpdaac.usgs.gov/documents/925/MOD09_User_Guide_V61.pdf
 BANDS_QC = [
     60,      # 111100, band 1
-    15360,   # 11110000000000, band 3
-    245760   # 111100000000000000, band 4
+    245760,  # 111100000000000000, band 4
+    15360    # 11110000000000, band 3
 ]
+SR_MAX = 16000
+SR_MIN = -100
+GAMMA = 0.4
 IMG_DIR= 'site-imgs'
 
-#---------------------------------------------------
-def json_2_channel(band_name, band_idx, data, qc_band):
+def json_sr_2_channel(band_name, band_idx, data, qc_band):
     nsubs = len(data[band_name]['subset'])
     if nsubs > 1:
         logging.warning("using the first subset for %s ...", band_name)
-    arr = numpy.array(data[band_name]['subset'][0]['data'], dtype='f4') * float(data[band_name]['scale'])
-    dat = ((arr - arr.min()) * (1/(arr.max() - arr.min()) * 255)).astype('uint8')
-    # clean with mod land qc
-    qc = qc_band & MDLND_QC  
-    dat = numpy.ma.masked_where(qc != 0, dat, copy=False)
-    # clean with band qc 
-    qc = qc_band & BANDS_QC[band_idx] 
-    dat = numpy.ma.masked_where(qc != 0, dat, copy=False)
+    scale = float(data[band_name]['scale'])
+    arr = numpy.array(data[band_name]['subset'][0]['data']).astype('f4')
+    arr = numpy.ma.masked_where(arr > SR_MAX, arr, copy=False)
+    arr = numpy.ma.masked_where(arr < SR_MIN, arr, copy=False)
+    arr *= scale
+    sr_min, sr_max = SR_MIN * scale, SR_MAX * scale
+    dat = ((arr - sr_min) * (1/(sr_max - sr_min) * 255)).astype('uint8')
+    qc_bnd = qc_band & BANDS_QC[band_idx]
+    dat = numpy.ma.masked_where(qc_bnd != 0, dat, copy=False)
     return dat
-#json_2_channel
+#json_sr_2_channel
 
-#---------------------------------------------------
 def post_m09a1(data):
-    logging.debug('rgb debug images for MODIS Terra or Aqua Surface Reflectance (SREF) 8-Day L3 Global 500m...')
+    logging.info("Building rgb image for MODIS Terra/Aqua Surface Reflectance (SREF) 8-Day L3 Global 500 %s", data['name'])
     qc = numpy.array(data['sur_refl_qc_500m']['subset'][0]['data'], dtype='u4')
-    redish = json_2_channel('sur_refl_b01', 0, data, qc)
-    greenish = json_2_channel('sur_refl_b04', 1, data, qc)
-    blueish = json_2_channel('sur_refl_b03', 2, data, qc)
+    redish = json_sr_2_channel('sur_refl_b01', 0, data, qc)
+    greenish = json_sr_2_channel('sur_refl_b04', 1, data, qc)
+    blueish = json_sr_2_channel('sur_refl_b03', 2, data, qc)
     msk = redish.mask | greenish.mask | blueish.mask
-    alpha = numpy.where(msk == True, 0, 255).astype('uint8') 
+    alpha = numpy.where(msk == True, 0, 255).astype('uint8')
     shp = data['sur_refl_b01']['nrows'], data['sur_refl_b01']['ncols'], 4
-    rgba = numpy.dstack((redish, greenish, blueish, alpha)).reshape(shp)
-    img = Image.fromarray(rgba ,'RGBA')
-    img.save(data['name'])
+    try:
+        rgba = numpy.dstack((redish, greenish, blueish, alpha)).reshape(shp)
+        gcorrect = exposure.adjust_gamma(rgba, GAMMA)
+        img = Image.fromarray(gcorrect,'RGBA')
+        img.save(data['name'])
+    except ValueError as valerr:
+        logging.error("%s for %s, image not created", str(valerr), data['name'])
 #post_m09a1
 
-#---------------------------------------------------
 def subset_site_data(csv, prod):
     coordinates = pd.read_csv(csv)
     logging.debug(coordinates)
@@ -113,9 +117,7 @@ def subset_site_data(csv, prod):
                     data_obj[band] = subset
             #done
             post_m09a1(data_obj)
-            break
         #done
-        break
     #done
     logging.debug("done writing subsets ...")
 #subset_site_data
