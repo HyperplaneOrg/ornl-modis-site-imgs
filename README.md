@@ -24,4 +24,5 @@ $ ./build_mod_imgs.py
 
 Note, sites.csv must be in the working directory (see script) and outputs are
 placed in ./site-imgs/\<site_tag\>/\<prod\>_A\<date\>_rgb.png
+See the sample images in this repository, ./site-imgs .
 
