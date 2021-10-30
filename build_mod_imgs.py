@@ -55,13 +55,11 @@ def post_m09a1(data):
     redish = json_sr_2_channel('sur_refl_b01', 0, data, qc)
     greenish = json_sr_2_channel('sur_refl_b04', 1, data, qc)
     blueish = json_sr_2_channel('sur_refl_b03', 2, data, qc)
-    msk = redish.mask | greenish.mask | blueish.mask
-    alpha = numpy.where(msk == True, 0, 255).astype('uint8')
-    shp = data['sur_refl_b01']['nrows'], data['sur_refl_b01']['ncols'], 4
+    shp = data['sur_refl_b01']['nrows'], data['sur_refl_b01']['ncols'], 3
     try:
-        rgba = numpy.dstack((redish, greenish, blueish, alpha)).reshape(shp)
-        gcorrect = exposure.adjust_gamma(rgba, GAMMA)
-        img = Image.fromarray(gcorrect,'RGBA')
+        rgb = numpy.dstack((redish, greenish, blueish)).reshape(shp)
+        gcorrect = exposure.adjust_gamma(rgb, GAMMA)
+        img = Image.fromarray(gcorrect,'RGB')
         img.save(data['name'])
     except ValueError as valerr:
         logging.error("%s for %s, image not created", str(valerr), data['name'])
