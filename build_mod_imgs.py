@@ -33,6 +33,9 @@ SR_MIN = -100
 GAMMA = 0.4
 IMG_DIR= 'site-imgs'
 
+# The % of the image that should be of "high quality"
+PRCNT_GOOD = .90  # Needs to be ~90% good
+
 def json_sr_2_channel(band_name, band_idx, data, qc_band):
     nsubs = len(data[band_name]['subset'])
     if nsubs > 1:
@@ -56,6 +59,11 @@ def post_m09a1(data):
     greenish = json_sr_2_channel('sur_refl_b04', 1, data, qc)
     blueish = json_sr_2_channel('sur_refl_b03', 2, data, qc)
     msk = redish.mask | greenish.mask | blueish.mask
+    pgood =  numpy.count_nonzero(msk == 0) / msk.shape[0]
+    logging.debug("Quality pixels ~ %f %%", pgood)
+    if pgood <= PRCNT_GOOD:
+        logging.warning("Skipping %s due to poor quality image", data['name'])
+        return
     alpha = numpy.where(msk == True, 0, 255).astype('uint8')
     shp = data['sur_refl_b01']['nrows'], data['sur_refl_b01']['ncols'], 4
     try:
